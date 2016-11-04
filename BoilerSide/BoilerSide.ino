@@ -1,3 +1,5 @@
+#include <EEPROM.h>
+
 #include <TimerOne.h>
 
 #include <OneWire.h>
@@ -13,19 +15,21 @@
  *     * STARTHEATING
  *     * STOPHEATING
  *     * AUTOTUNE
- *     * SETPID
+ *     * SETP/SETI/SETD
  * Store PID values in EEPROM
  * PWM for the SSR
  * Setup of the PID Control.
  */
 
 PIDDynamicSampleTime PID;
-PID_ATune PIDAutoTune;
+PID_ATune PIDAutoTune(E_PID_ControlType_PID, 50, 55, 0.1, 40, 40);
 bool isInAutotune = false;
 
 // Data wire is plugged into port 2 on the Arduino
 #define ONE_WIRE_BUS 23
-#define SSR_OUTPUT 43
+#define SSR_OUTPUT 12
+
+#define PID_EEPROM_ADDRESS 0
 
 // Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
 OneWire oneWire(ONE_WIRE_BUS);
@@ -47,6 +51,7 @@ bool newTempReading = false;
 
 char outgoingMessage[50];
 char incomingMessage[50];
+String incomingString = "";
 char incomingMessageSize = 0;
 char bytesRead = 0;
 
@@ -68,6 +73,15 @@ void setup(void)
 
   Timer1.initialize(10000);
   Timer1.attachInterrupt(PwmOutputInterrupt); // blinkLED to run every 0.15 seconds
+    
+  float p, i, d;
+  EEPROM.get(PID_EEPROM_ADDRESS, p);
+  EEPROM.get(PID_EEPROM_ADDRESS+4, i);
+  EEPROM.get(PID_EEPROM_ADDRESS+8, d);
+  Serial.println(p);
+  Serial.println(i);
+  Serial.println(d);
+  PID.SetTunings(p, i, d, 0);
 }
 
 void PwmOutputInterrupt(void)
@@ -98,32 +112,109 @@ bool readTemperature()
   return false;
 }
 
+void handleCommands()
+{
+  if (Serial.available())
+  {
+    float parameter;
+    bytesRead = Serial.readBytesUntil('\n', incomingMessage, 50);
+    //incomingMessageSize += bytesRead;
+    incomingString += incomingMessage;
+    incomingMessage[0] = 0;
+    Serial.println(incomingMessage);
+    if (incomingMessage[bytesRead-1] == '\n' || incomingMessage[bytesRead-1] == '\r')
+    {
+      // start parsing commands:
+
+      //keep alive
+      if (incomingString.startsWith("KEEPALIVE"))
+      {
+        Serial.println("Alive");
+      }
+      else if (incomingString.startsWith("SETP"))
+      {
+        Serial.println("SETP");
+        parameter = incomingString.substring(5).toFloat();
+        EEPROM.put(PID_EEPROM_ADDRESS, parameter);
+        Serial.println(parameter);
+      }
+      else if (incomingString.startsWith("SETI"))
+      {
+        Serial.println("SETI");
+        parameter = incomingString.substring(5).toFloat();
+        EEPROM.put(PID_EEPROM_ADDRESS+4, parameter);
+        Serial.println(parameter);
+      }
+      else if (incomingString.startsWith("SETD"))
+      {
+        Serial.println("SETD");
+        parameter = incomingString.substring(5).toFloat();
+        EEPROM.put(PID_EEPROM_ADDRESS+8, parameter);
+        Serial.println(parameter);
+      }
+      else if (incomingString.startsWith("STARTHEATING"))
+      {
+        Serial.println("STARTHEATING");
+        parameter = incomingString.substring(12).toFloat();
+        Serial.println(parameter);
+        isInAutotune = false;
+        PID.setSetPoint(parameter, 0);
+        PID.setAutoMode(true);
+        PID.setEnabled(true);
+      }
+      else if (incomingString.startsWith("STOP"))
+      {
+        Serial.println("STOP");
+        PID.setEnabled(false);
+        PID.setAutoMode(false);
+        isInAutotune = false;
+      }
+      else if (incomingString.startsWith("AUTOTUNE"))
+      {
+        Serial.println("AUTOTUNE");
+        parameter = incomingString.substring(12).toFloat();
+//        EEPROM.put(PID_EEPROM_ADDRESS+8, parameter);
+        Serial.println(parameter);
+        isInAutotune = true;
+        PID.setSetPoint(parameter, 0);
+        PID.setAutoMode(true);
+        PID.setEnabled(true);
+      }
+      incomingString = "";
+    }
+    if (incomingMessageSize >= 50)
+      incomingMessageSize = 0;
+  }
+}
+
 void loop() {
   newTempReading = readTemperature();
   if (newTempReading)
   {
     if (isInAutotune)
+    {
       output = (char)PIDAutoTune.Compute(temperature);
+      if (!PIDAutoTune.isRunning())
+      {
+        isInAutotune = false;
+        float p, i, d;
+        p = PIDAutoTune.GetKp();
+        i = PIDAutoTune.GetKi();
+        d = PIDAutoTune.GetKd();
+        Serial.println(p);
+        Serial.println(i);
+        Serial.println(d);
+        EEPROM.put(PID_EEPROM_ADDRESS, p);
+        EEPROM.put(PID_EEPROM_ADDRESS+4, i);
+        EEPROM.put(PID_EEPROM_ADDRESS+8, d);
+        PID.SetTunings(p, i, d, 0);
+      }
+    }
     else
       output = (char)PID.Compute(temperature);
     sprintf(outgoingMessage, "T%0d.%02d O%0d\n", (int)temperature, (int)(((int)(temperature*100))%100), output);
     Serial.print(outgoingMessage);
   }
 
-  if (Serial.available())
-  {
-    bytesRead = Serial.readBytesUntil('\n', incomingMessage+incomingMessageSize, 50-incomingMessageSize);
-    incomingMessageSize += bytesRead;
-
-    sprintf(outgoingMessage, "Char at end of incoming string: %d\n", incomingMessage[incomingMessageSize-1]);
-
-    Serial.println(incomingMessage);
-    Serial.println(outgoingMessage);
-    if (incomingMessage[incomingMessageSize-1] == '\n' || incomingMessage[incomingMessageSize-1] == '\r')
-    {
-      Serial.println("Message Accepted");
-    }
-    if (incomingMessageSize >= 50)
-      incomingMessageSize = 0;
-  }
+  handleCommands();
 }

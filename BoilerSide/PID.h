@@ -9,7 +9,6 @@ class PIDDynamicSampleTime
     /*working variables*/
     // temporary vars:
     unsigned long m_lastTick;
-    unsigned long m_lastDTermTick;
     float m_input, m_output, m_setpoint, m_lastOutput;
     float m_error, m_dError;
     float m_dInput;
@@ -18,7 +17,6 @@ class PIDDynamicSampleTime
     float m_ITerm, m_lastInput;
     float m_kp, m_ki, m_kd;
     float m_kiErrorThreshold; //!< When temp error is above this threshold, we don't calculate the iTerm.
-    float m_setpointSmoothingThreshold; //!< this is used to limit the temperature acceleration.
     float m_outputSmoothingCoeff;
     float m_outMin, m_outMax;
     float m_setpointRange;
@@ -114,16 +112,6 @@ public:
     void setKiErrorThreshold(float kiErrorThreshold)
     {
         m_kiErrorThreshold = kiErrorThreshold;
-    }
-
-    float getSetpointSmoothingThreshold() const
-    {
-        return m_setpointSmoothingThreshold;
-    }
-
-    void setSetpointSmoothingThreshold(float setpointSmoothingThreshold)
-    {
-        m_setpointSmoothingThreshold = setpointSmoothingThreshold;
     }
 
     int getOutputSmoothingWindow() const
