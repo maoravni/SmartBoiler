@@ -57,6 +57,7 @@ char bytesRead = 0;
 
 void setup(void)
 {
+  delay(10000);
   Serial.begin(115200);
   Serial.setTimeout(1);
 
@@ -78,8 +79,11 @@ void setup(void)
   EEPROM.get(PID_EEPROM_ADDRESS, p);
   EEPROM.get(PID_EEPROM_ADDRESS+4, i);
   EEPROM.get(PID_EEPROM_ADDRESS+8, d);
+  Serial.print("p: ");
   Serial.println(p);
+  Serial.print("i: ");
   Serial.println(i);
+  Serial.print("d: ");
   Serial.println(d);
   PID.SetTunings(p, i, d, 0);
 }
@@ -114,13 +118,15 @@ bool readTemperature()
 
 void handleCommands()
 {
-  if (Serial.available())
+  float parameter;
+  bytesRead = Serial.readBytesUntil('\n', incomingMessage, 50);
+  if (bytesRead > 0)
   {
-    float parameter;
-    bytesRead = Serial.readBytesUntil('\n', incomingMessage, 50);
+    //Serial.println("handleCommands()");
     //incomingMessageSize += bytesRead;
     incomingString += incomingMessage;
-    incomingMessage[0] = 0;
+    Serial.print("incoming: ");
+    Serial.print(bytesRead, DEC);
     Serial.println(incomingMessage);
     if (incomingMessage[bytesRead-1] == '\n' || incomingMessage[bytesRead-1] == '\r')
     {
@@ -184,6 +190,7 @@ void handleCommands()
     }
     if (incomingMessageSize >= 50)
       incomingMessageSize = 0;
+    incomingMessage[0] = 0;
   }
 }
 
@@ -211,7 +218,9 @@ void loop() {
       }
     }
     else
+    {
       output = (char)PID.Compute(temperature);
+    }
     sprintf(outgoingMessage, "T%0d.%02d O%0d\n", (int)temperature, (int)(((int)(temperature*100))%100), output);
     Serial.print(outgoingMessage);
   }
